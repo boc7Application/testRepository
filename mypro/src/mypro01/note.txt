@@ -1,0 +1,50 @@
+参考资料：
+https://blog.csdn.net/Justnow_/article/details/95505899
+https://blog.csdn.net/Qgwperfect/article/details/89874310
+
+超大文件读取通常面临内存问题
+几种处理方式：
+1、文件通道：ReadFileByFileChannel.java
+
+2、内存文件映射：MappedFileReader.java 使用MappedByteBuffer
+
+问：使用内存文件映射 MappedByteBuffer 读超大文件会有什么问题吗？
+答：这种方式存在一个致命问题就是依然没法读取超大文件（大于 Integer.MAX_VALUE），因为 FileChannel 的 map 方法中 size 参数会有大小限制，源码中发现该参数值大于 Integer.MAX_VALUE 时会直接抛出 IllegalArgumentException("Size exceeds Integer.MAX_VALUE")异常，所以对于特别大的文件其依然不适合。
+
+本质上是由于 java.nio.MappedByteBuffer 直接继承自 java.nio.ByteBuffer，而 ByteBuffer 的索引是 int 类型的，所以 MappedByteBuffer 也只能最大索引到 Integer.MAX_VALUE 的位置，所以 FileChannel 的 map 方法会做参数合法性检查。
+
+我们可以通过多个内存文件映射来解决这个问题.https://www.jianshu.com/p/87744d9eb212
+BigMappedByteBufferReader.java（还未调试）多个MappedByteBuffer
+
+
+3、传统Block IO读入，因为大文件解析面临内存问题，考虑使用带缓冲区的方式进行读入
+BufferedReader  ReadFileByBlockIO.java (据说 csv 600w+数据（），67s)
+
+4、NIO零拷贝，主要分为3步：(MappedByteBuffer应该就属于此种方式)
+大文件进行分割切片（此处切片只是打上标记）
+对于分割后的slice，使用线程池进行处理
+收集处理结果统计
+（3000w数据 4.7G csv，7min）
+不要使单个切片过大，不然会报错(单个切片size不要大于Integer.MAX_VALUE)
+
+5、业界评价：IO本身就是瓶颈，提高IO数据吞吐量的办法，使用BufferedReader已经是一个很好的选择了。
+速度最快的方法，当然是MappedByteBuffer，但是，相比BufferedReader而言，效果不是非常明显。
+也就是说，后者虽然快，但是，也快的有限。(ReadFileByBufferReader.java 未调试)
+要是不用多线程（多线程提升潜力也不大），那么，换磁盘阵列 是个不错的选择。
+你要是还不明白是怎么回事，那就把磁盘型号抄下来，去网上搜一搜，磁盘的读写速度就知道了。
+
+
+
+
+总结：
+网上的文章基本分为两大类:
+一类是使用BufferedReader类读写超大文件；
+另一类是使用RandomAccessFile类读取，RandomAccessFile可以获取和设置文件指针，但RandomAccessFile性能较差？
+还有一类是MappedByteBuffer？  
+
+几种处理大文件的思路
+普通 IO 读取大文件存在的问题；
+Java 多线程解析大文件的基本思路；
+内存映射技术和多线程并发解析大文件的实现过程；
+
+
